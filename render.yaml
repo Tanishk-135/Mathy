@@ -1,8 +1,7 @@
 services:
   - type: worker
-    name: mathy-bot
+    name: mathy-bot-worker
     env: python
     plan: free
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python bot.py"
-    pythonVersion: 3.11.9
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
