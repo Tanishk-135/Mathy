@@ -88,8 +88,8 @@ def log_interaction(user, user_msg, bot_response):
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry) + "\n")
 
-# === Chunk response into ≤1999 char messages ===
-def chunk_message(message, limit=1999):
+# === Chunk response into ≤2000 char messages ===
+def chunk_message(message, limit=2000):
     chunks = []
     while len(message) > limit:
         split_point = message.rfind("\n", 0, limit)
