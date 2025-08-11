@@ -345,7 +345,7 @@ async def on_message(message):
             # Log to database
             cur.execute(
                 "INSERT INTO mathy_logs (user_id, username, question, response) VALUES (%s, %s, %s, %s)",
-                (message.author.id, str(message.author), message.content, response)
+                (message.author.id, str(message.author), message.content.replace("<@1376515962915913778>", "@Mathy"), response)
             )
             conn.commit()
 
