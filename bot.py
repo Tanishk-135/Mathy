@@ -18,6 +18,8 @@ from dotenv import load_dotenv
 import io
 from threading import Thread
 from flask import Flask
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
 load_dotenv()
 
@@ -42,6 +44,23 @@ sent_message=False
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 app = Flask(__name__)
+
+DATABASE_URL = os.getenv("DATABASE_URL")  # Railway will provide this
+conn = psycopg2.connect(DATABASE_URL, sslmode="require", cursor_factory=RealDictCursor)
+cur = conn.cursor()
+
+# Create table if not exists
+cur.execute("""
+CREATE TABLE IF NOT EXISTS mathy_logs (
+    id SERIAL PRIMARY KEY,
+    user_id BIGINT,
+    username TEXT,
+    question TEXT,
+    response TEXT,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+""")
+conn.commit()
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -322,6 +341,14 @@ async def on_message(message):
         try:
             await message.channel.typing()
             response = await get_mathy_response(prompt)
+
+            # Log to database
+            cur.execute(
+                "INSERT INTO mathy_logs (user_id, username, question, response) VALUES (%s, %s, %s, %s)",
+                (message.author.id, str(message.author), message.content, response)
+            )
+            conn.commit()
+
         except Exception as e:
             response = f"❌ Error generating response: {str(e)}"
             logger.error(f"Error in get_mathy_response: {e}")
@@ -334,6 +361,7 @@ async def on_message(message):
         logger.info(f"Sent a response to {message.author}'s prompt: {prompt}")
 
     await bot.process_commands(message)
+
 
 @bot.command(name="clear")
 async def clear(ctx, amount: int = 10):
