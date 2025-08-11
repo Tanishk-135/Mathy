@@ -66,7 +66,7 @@ def set_error_flag(value: bool = True):
     
 async def restart_at_safe_time(hour=2, minute=30):
     while True:
-        now = datetime.datetime.now()
+        now = datetime.now()
         restart_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
         if now >= restart_time:
             restart_time += datetime.timedelta(days=1)
