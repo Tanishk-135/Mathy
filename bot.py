@@ -63,6 +63,26 @@ def set_error_flag(value: bool = True):
         logger.info(f"⚠️ Set error flag to {value} in {STATUS_FILE}")
     except Exception as e:
         logger.error(f"❌ Failed to set error flag in {STATUS_FILE}: {e}")
+    
+async def restart_at_safe_time(hour=2, minute=30):
+    while True:
+        now = datetime.datetime.now()
+        restart_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if now >= restart_time:
+            restart_time += datetime.timedelta(days=1)
+        wait_seconds = (restart_time - now).total_seconds()
+        print(f"[Restart Scheduler] Waiting {wait_seconds/60:.1f} minutes until restart window at {hour:02d}:{minute:02d}...")
+        await asyncio.sleep(wait_seconds)
+        print("[Restart Scheduler] Restarting now...")
+        sys.exit(0)
+
+async def uptime_watcher(hours=12):
+    await asyncio.sleep(hours * 3600)
+    print(f"[Uptime Watcher] {hours} hours reached, scheduling restart...")
+    asyncio.create_task(restart_at_safe_time())
+
+# Schedule the uptime watcher when your bot starts
+asyncio.create_task(uptime_watcher())
 
 # === Reset bot status on startup ===
 def reset_status():
