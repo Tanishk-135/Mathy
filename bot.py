@@ -81,9 +81,6 @@ async def uptime_watcher(hours=12):
     print(f"[Uptime Watcher] {hours} hours reached, scheduling restart...")
     asyncio.create_task(restart_at_safe_time())
 
-# Schedule the uptime watcher when your bot starts
-asyncio.create_task(uptime_watcher())
-
 # === Reset bot status on startup ===
 def reset_status():
     if os.path.exists(STATUS_FILE):
@@ -261,6 +258,7 @@ async def on_ready():
     # Start the background tasks
     bot.loop.create_task(schedule_midnight_vote_summary())
     daily_problem_scheduler.start()
+    asyncio.create_task(restart_at_safe_time())
 
 @bot.event
 async def on_member_join(member):
