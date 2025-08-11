@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Expose port if your bot uses one (optional, mostly for web apps)
-# EXPOSE 8080
+EXPOSE 8080
 
 # Default command to run your bot
 CMD ["python", "bot.py"]

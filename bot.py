@@ -16,6 +16,8 @@ import re
 from daily import math_problem, math_quote, get_vote_counts
 from dotenv import load_dotenv
 import io
+from threading import Thread
+from flask import Flask
 
 load_dotenv()
 
@@ -39,6 +41,7 @@ last_sent_date = None
 sent_message=False
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+app = Flask(__name__)
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -317,6 +320,18 @@ async def clear(ctx, amount: int = 10):
     # Bulk delete messages
     deleted = await ctx.channel.purge(limit=amount)
     await ctx.send(f"🧹 Cleared {len(deleted)} messages.", delete_after=5)
+
+@app.route('/')
+def home():
+    return 'Mathy bot is alive!'
+
+def run_flask():
+    app.run(host='0.0.0.0', port=8080)
+
+# Start Flask server in a separate thread so it doesn’t block your bot
+flask_thread = Thread(target=run_flask)
+flask_thread.daemon = True
+flask_thread.start()
 
 # === Run Bot ===
 bot.run(os.getenv("DISCORD_TOKEN"))
