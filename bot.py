@@ -69,7 +69,7 @@ async def restart_at_safe_time(hour=2, minute=30):
         now = datetime.now()
         restart_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
         if now >= restart_time:
-            restart_time += datetime.timedelta(days=1)
+            restart_time += timedelta(days=1)
         wait_seconds = (restart_time - now).total_seconds()
         print(f"[Restart Scheduler] Waiting {wait_seconds/60:.1f} minutes until restart window at {hour:02d}:{minute:02d}...")
         await asyncio.sleep(wait_seconds)
