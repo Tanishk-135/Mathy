@@ -331,7 +331,7 @@ async def on_message(message):
             await message.channel.send(chunk)
 
         log_interaction(message.author, prompt, response)
-        logger.info(f"📥 {message.author}: {prompt}\n📤 Mathy: {response}")
+        logger.info(f"Sent a response to {message.author}'s prompt: {prompt}")
 
     await bot.process_commands(message)
 
