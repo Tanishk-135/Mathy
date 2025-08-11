@@ -45,6 +45,7 @@ app = Flask(__name__)
 
 intents = discord.Intents.default()
 intents.message_content = True
+intents.members=True
 
 bot = commands.Bot(command_prefix=commands.when_mentioned, intents=intents)
 
@@ -240,6 +241,17 @@ async def on_ready():
     # Start the background tasks
     bot.loop.create_task(schedule_midnight_vote_summary())
     daily_problem_scheduler.start()
+
+@bot.event
+async def on_member_join(member):
+    role_name = "MathMind"
+    guild = member.guild
+    role = discord.utils.get(guild.roles, name=role_name)
+    if role:
+        await member.add_roles(role)
+        print(f"Assigned role '{role_name}' to {member.name}")
+    else:
+        print(f"Role '{role_name}' not found")
 
 @bot.command()
 async def restart(ctx):
