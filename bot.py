@@ -90,7 +90,9 @@ async def restart_at_safe_time(hour=2, minute=30):
         if now >= restart_time:
             restart_time += timedelta(days=1)
         wait_seconds = (restart_time - now).total_seconds()
-        print(f"[Restart Scheduler] Waiting {wait_seconds/60:.1f} minutes until restart window at {hour:02d}:{minute:02d}...")
+        hours = int(wait_seconds // 3600)
+        minutes = int((wait_seconds % 3600) // 60)
+        print(f"[Restart Scheduler] Waiting {hours} hrs {minutes} minutes until restart window at {hour:02d}:{minute:02d}..." if minutes!=0 else f"[Restart Scheduler] Waiting {hours} hrs until restart window at {hour:02d}:{minute:02d}...")
         await asyncio.sleep(wait_seconds)
         print("[Restart Scheduler] Restarting now...")
         sys.exit(0)
@@ -184,7 +186,10 @@ async def daily_problem_scheduler():
             set_error_flag(True)
     else:
         if not sent_message:
-            print(f"⏳ Sleeping {wait_seconds/3600:.2f} hrs until 8 AM for daily math problem...")
+            hours = int(wait_seconds // 3600)
+            minutes = int((wait_seconds % 3600) // 60)
+            print(f"⏳ Sleeping {hours} hrs {minutes} mins until 8 AM for daily math problem..." if minutes!=0 else f"⏳ Sleeping {hours} hrs until 8 AM for daily math problem...")
+
         sent_message=True
 
 daily_problem_message = None
@@ -208,7 +213,9 @@ async def schedule_midnight_vote_summary():
         next_midnight_ist = IST.localize(next_midnight_ist)
 
         wait_seconds = (next_midnight_ist - now_ist).total_seconds()
-        logger.info(f"⏳ Sleeping {wait_seconds/3600:.2f} hrs until midnight IST for vote summary...")
+        hours = int(wait_seconds // 3600)
+        minutes = int((wait_seconds % 3600) // 60)
+        logger.info(f"⏳ Sleeping {hours} hrs {minutes} minutes until midnight IST for vote summary..." if minutes!=0 else f"⏳ Sleeping {hours} hrs until midnight IST for vote summary...")
         await asyncio.sleep(wait_seconds)
 
         # Run the vote summary at midnight
