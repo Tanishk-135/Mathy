@@ -379,7 +379,12 @@ async def on_message(message):
         prompt = message.content.replace(f"<@{bot.user.id}>", "").strip()
         try:
             await message.channel.typing()
-            response = await get_mathy_response(prompt)
+            response = response = await get_mathy_response(
+    user_prompt=prompt,
+    user_ident=str(message.author),
+    user_id=str(message.author.id)
+)
+
             response = re.sub(r"`<@(\d{18})>`", r"<@\1>", response)
             # Log to database
             cleaned_message = await replace_mentions_with_usernames(message)  # Pass full message object
