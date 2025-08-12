@@ -274,6 +274,23 @@ Also keep it under 2k characters and actually see the votes and judge using the 
         else:
             logger.info("ℹ️ No active daily problem or channel for midnight vote summary.")
 
+async def replace_mentions_with_usernames(message):
+    content = message.content
+    guild = message.guild
+
+    user_ids = re.findall(r"<@(\d{17,19})>", content)
+    unique_ids = set(user_ids)
+
+    for user_id in unique_ids:
+        member = guild.get_member(int(user_id))
+        if member:
+            content = re.sub(rf"<@{user_id}>", f"@{member.name}", content)
+        else:
+            content = re.sub(rf"<@{user_id}>", "@user", content)
+
+    content = content.replace("*", "").replace("`", "")
+    return content
+
 @bot.event
 async def on_ready():
     global daily_problem_message, correct_answer_letter, correct_answer_option, problem
@@ -365,9 +382,11 @@ async def on_message(message):
             response = await get_mathy_response(prompt)
             response = re.sub(r"`<@(\d{18})>`", r"<@\1>", response)
             # Log to database
+            cleaned_message=message.content.replace("<@1376515962915913778>", "@Mathy").replace("*","").replace("`","")
+            cleaned_message = await replace_mentions_with_usernames(cleaned_message)
             cur.execute(
                 "INSERT INTO mathy_logs (user_id, username, question, response) VALUES (%s, %s, %s, %s)",
-                (message.author.id, str(message.author), message.content.replace("<@1376515962915913778>", "@Mathy").replace("*","").replace("`",""), response)
+                (message.author.id, str(message.author), cleaned_message, response)
             )
             conn.commit()
 
