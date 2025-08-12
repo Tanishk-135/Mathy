@@ -19,7 +19,7 @@ import io
 from threading import Thread
 from flask import Flask
 import psycopg2
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import RealDictCursors
 
 load_dotenv()
 
@@ -83,19 +83,28 @@ def set_error_flag(value: bool = True):
     except Exception as e:
         logger.error(f"❌ Failed to set error flag in {STATUS_FILE}: {e}")
     
+import pytz
+from datetime import datetime, timedelta
+
 async def restart_at_safe_time(hour=2, minute=30):
+    IST = pytz.timezone('Asia/Kolkata')
+
     while True:
-        now = datetime.now()
-        restart_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        if now >= restart_time:
+        now_ist = datetime.now(pytz.utc).astimezone(IST)
+        restart_time = now_ist.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+        if now_ist >= restart_time:
             restart_time += timedelta(days=1)
-        wait_seconds = (restart_time - now).total_seconds()
+
+        wait_seconds = (restart_time - now_ist).total_seconds()
         hours = int(wait_seconds // 3600)
         minutes = int((wait_seconds % 3600) // 60)
-        print(f"[Restart Scheduler] Waiting {hours} hrs {minutes} minutes until restart window at {hour:02d}:{minute:02d}..." if minutes!=0 else f"[Restart Scheduler] Waiting {hours} hrs until restart window at {hour:02d}:{minute:02d}...")
+
+        print(f"[Restart Scheduler] Waiting {hours} hrs {minutes} minutes until restart window at {hour:02d}:{minute:02d} IST...")
         await asyncio.sleep(wait_seconds)
+
         print("[Restart Scheduler] Restarting now...")
-        sys.exit(0)
+        os.execv(sys.executable, [sys.executable] + sys.argv)
 
 async def uptime_watcher(hours=12):
     await asyncio.sleep(hours * 3600)
@@ -145,20 +154,25 @@ async def daily_problem_scheduler():
 
     IST = pytz.timezone('Asia/Kolkata')
     now_ist = datetime.now(pytz.utc).astimezone(IST)
+    today_date = now_ist.date()
 
-    # Calculate next midnight IST
-    next_daily = datetime.combine(now_ist.date() + timedelta(days=1), time(8, 0, 0))
+    # Calculate the *next* 8 AM IST
+    if now_ist.time() < dt_time(8, 0):
+        next_daily = datetime.combine(today_date, dt_time(8, 0, 0))
+    else:
+        next_daily = datetime.combine(today_date + timedelta(days=1), dt_time(8, 0, 0))
     next_daily = IST.localize(next_daily)
 
     wait_seconds = (next_daily - now_ist).total_seconds()
-    today_date = now_ist.date()
 
-    # Check if it's between 8:00 and 8:30 AM AND we haven't sent today
+    # Send between 8:00 and 8:30 IST
     if dt_time(8, 0) <= now_ist.time() <= dt_time(8, 30) and last_sent_date != today_date:
         channel = bot.get_channel(1402996264278298695)
         if channel:
             try:
                 problem = await math_problem()
+
+                # Extract correct answer letter
                 match = re.search(r"Correct Answer:\s*([A-D])", problem, re.IGNORECASE)
                 if match:
                     correct_answer_letter = match.group(1).upper()
@@ -175,8 +189,8 @@ async def daily_problem_scheduler():
                 for emoji in LETTER_TO_EMOJI.values():
                     await daily_problem_message.add_reaction(emoji)
 
-                # ✅ Update the flag so it doesn't send again today
-                last_sent_date = today_date
+                last_sent_date = today_date  # ✅ Prevents double send
+                sent_message = False  # Reset for next day logging
 
             except Exception as e:
                 logger.error(f"❌ Failed to send daily problem: {e}")
@@ -184,13 +198,14 @@ async def daily_problem_scheduler():
         else:
             logger.error("❌ Channel not found.")
             set_error_flag(True)
+
     else:
+        # Log countdown only if it hasn’t sent today
         if not sent_message:
             hours = int(wait_seconds // 3600)
             minutes = int((wait_seconds % 3600) // 60)
-            print(f"⏳ Sleeping {hours} hrs {minutes} mins until 8 AM for daily math problem..." if minutes!=0 else f"⏳ Sleeping {hours} hrs until 8 AM for daily math problem...")
-
-        sent_message=True
+            print(f"⏳ Sleeping {hours} hrs {minutes} mins until 8 AM for daily math problem..." if minutes != 0 else f"⏳ Sleeping {hours} hrs until 8 AM for daily math problem...")
+            sent_message = True
 
 daily_problem_message = None
 correct_answer_letter = None     # Store the letter 'A'/'B'/'C'/'D'
