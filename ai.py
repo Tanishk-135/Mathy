@@ -95,7 +95,7 @@ def get_conversation_history(user_id: str):
 async def get_mathy_response(user_prompt: str, user_ident: str = "Unknown User", user_id: str = "000000000000000000"):
     try:
         # Add user prompt to history
-        add_user_prompt(user_id, user_prompt)
+        add_user_prompt(user_id, user_ident, user_prompt)
 
         # Build conversation history
         history_text = get_conversation_history(user_id)
