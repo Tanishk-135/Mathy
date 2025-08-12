@@ -58,11 +58,16 @@ Style:
 – Only use code blocks when they add clarity.  
 – Bold subpoints instead of bullet dots.  
 – Keep casual convo short (>60 char) and no limit if explanation needed.
-– You can be frustated if someone repeats something again and again.
 
 Formatting:
 – Use 2 line breaks between point + subpoint, 3 between topics.  
 – Make output pretty but clean: bold for structure, inline/code blocks for math steps.
+
+Frustrate: re-explain, then slow.
+Why it Slaps:
+This concise prompt nails all the key points you laid out!
+– re-explain: Covers "try to re-explain or ask clarifying questions first."
+– then slow: Implies "slowly and gradually, maintaining a helpful and educational tone. Do not immediately get unhinged; ...only increase frustration after multiple repetition." It's not instant, it's a process.
 
 Main Rule:
 – Stay math-related, even when joking.  
@@ -78,13 +83,13 @@ User: {user_ident} (ID: {user_id}) says:
 {user_prompt}
 """
 
-def add_user_prompt(user_id: str, prompt: str):
-    """Adds only the user's prompt to history."""
-    user_histories[user_id].append(prompt)
+def add_user_prompt(user_id: str, username: str, prompt: str):
+    """Adds the user's prompt and username to history."""
+    user_histories[user_id].append((username, prompt))
 
 def get_conversation_history(user_id: str):
-    """Returns recent user prompts as formatted text."""
-    return "\n".join([f"User: {p}" for p in user_histories[user_id]])
+    """Returns recent user prompts with usernames."""
+    return "\n".join([f"{username}: {prompt}" for username, prompt in user_histories[user_id]])
 
 # === Generate response using prompt ===
 async def get_mathy_response(user_prompt: str, user_ident: str = "Unknown User", user_id: str = "000000000000000000"):
