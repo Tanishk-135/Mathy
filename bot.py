@@ -19,7 +19,7 @@ import io
 from threading import Thread
 from flask import Flask
 import psycopg2
-from psycopg2.extras import RealDictCursors
+from psycopg2.extras import RealDictCursor
 
 load_dotenv()
 
