@@ -363,7 +363,7 @@ async def on_message(message):
         try:
             await message.channel.typing()
             response = await get_mathy_response(prompt)
-
+            response = re.sub(r"`<@(\d{18})>`", r"<@\1>", response)
             # Log to database
             cur.execute(
                 "INSERT INTO mathy_logs (user_id, username, question, response) VALUES (%s, %s, %s, %s)",
