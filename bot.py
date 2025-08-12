@@ -382,8 +382,9 @@ async def on_message(message):
             response = await get_mathy_response(prompt)
             response = re.sub(r"`<@(\d{18})>`", r"<@\1>", response)
             # Log to database
-            cleaned_message=message.content.replace("<@1376515962915913778>", "@Mathy").replace("*","").replace("`","")
-            cleaned_message = await replace_mentions_with_usernames(cleaned_message)
+            cleaned_message = await replace_mentions_with_usernames(message)  # Pass full message object
+            cleaned_message = cleaned_message.replace("<@1376515962915913778>", "@Mathy").replace("*", "").replace("`", "")
+
             cur.execute(
                 "INSERT INTO mathy_logs (user_id, username, question, response) VALUES (%s, %s, %s, %s)",
                 (message.author.id, str(message.author), cleaned_message, response)
