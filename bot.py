@@ -17,9 +17,22 @@ import pytz
 
 from ai import get_mathy_response  # Gemini handler (must be async)
 from daily import math_problem, math_quote, get_vote_counts
-import database  # our new DB module
+import database  # our DB module
 
+# Import utilities
+from utils import (
+    set_error_flag,
+    reset_status,
+    log_interaction,
+    chunk_message,
+    replace_mentions_with_usernames,
+    STATUS_FILE,
+    IST
+)
+
+# ---------- Environment ----------
 load_dotenv()
+OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 
 # ---------- Logging ----------
 os.makedirs("logs", exist_ok=True)
@@ -38,16 +51,15 @@ logger = logging.getLogger()
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
-# ---------- Globals / Config ----------
-STATUS_FILE = "bot_status.json"
-LOG_FILE = "message_logs.jsonl"
-OWNER_ID = int(os.getenv("OWNER_ID", "0"))
-IST = pytz.timezone('Asia/Kolkata')
-
+# ---------- Globals ----------
 last_sent_date = None
 sent_message = False
+daily_problem_message = None
+correct_answer_letter = None
+correct_answer_option = None
+problem = None
 
-# Flask heartbeat (keep-alive)
+# ---------- Flask Keep-Alive ----------
 app = Flask(__name__)
 
 @app.route('/')
@@ -60,60 +72,13 @@ def run_flask():
 flask_thread = Thread(target=run_flask, daemon=True)
 flask_thread.start()
 
-# ---------- Discord Intents/Bot ----------
+# ---------- Discord Bot ----------
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 bot = commands.Bot(command_prefix=commands.when_mentioned, intents=intents)
 
-# ---------- Helpers ----------
-def set_error_flag(value: bool = True):
-    try:
-        data = {}
-        if os.path.exists(STATUS_FILE):
-            with open(STATUS_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        data["error"] = value
-        with open(STATUS_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f)
-        logger.info(f"⚠️ Set error flag to {value} in {STATUS_FILE}")
-    except Exception as e:
-        logger.error(f"❌ Failed to set error flag in {STATUS_FILE}: {e}")
-
-def reset_status():
-    if os.path.exists(STATUS_FILE):
-        with open(STATUS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        data["flash_both"] = False
-        data["error"] = False
-        data["timestamp"] = asyncio.get_event_loop().time()
-    else:
-        data = {"flash_both": False, "timestamp": asyncio.get_event_loop().time()}
-    with open(STATUS_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f)
-    logger.info("✅ Bot status reset.")
-
-def log_interaction(user, user_msg, bot_response):
-    entry = {
-        "timestamp": datetime.now().isoformat(),
-        "user": str(user),
-        "user_message": user_msg,
-        "bot_response": bot_response
-    }
-    with open(LOG_FILE, "a", encoding="utf-8") as f:
-        f.write(json.dumps(entry) + "\n")
-
-def chunk_message(message, limit=2000):
-    chunks = []
-    while len(message) > limit:
-        split_point = message.rfind("\n", 0, limit)
-        if split_point == -1:
-            split_point = limit
-        chunks.append(message[:split_point])
-        message = message[split_point:].lstrip()
-    chunks.append(message)
-    return chunks
-
+# ---------- Restart & Uptime ----------
 async def restart_at_safe_time(hour=2, minute=30):
     while True:
         now_ist = datetime.now(pytz.utc).astimezone(IST)
@@ -123,7 +88,7 @@ async def restart_at_safe_time(hour=2, minute=30):
         wait_seconds = (restart_time - now_ist).total_seconds()
         hours = int(wait_seconds // 3600)
         minutes = int((wait_seconds % 3600) // 60)
-        print(f"[Restart Scheduler] Waiting {hours} hrs {minutes} minutes until restart window at {hour:02d}:{minute:02d} IST...")
+        print(f"[Restart Scheduler] Waiting {hours} hrs {minutes} mins until {hour:02d}:{minute:02d} IST...")
         await asyncio.sleep(wait_seconds)
         print("[Restart Scheduler] Restarting now...")
         os.execv(sys.executable, [sys.executable] + sys.argv)
@@ -133,22 +98,7 @@ async def uptime_watcher(hours=12):
     print(f"[Uptime Watcher] {hours} hours reached, scheduling restart...")
     asyncio.create_task(restart_at_safe_time())
 
-async def replace_mentions_with_usernames(message: discord.Message) -> str:
-    content = message.content
-    guild = message.guild
-    user_ids = re.findall(r"<@(\d{17,19})>", content)
-    unique_ids = set(user_ids)
-    for user_id in unique_ids:
-        member = guild.get_member(int(user_id))
-        content = re.sub(rf"<@{user_id}>", f"@{member.name}" if member else "@user", content)
-    return content.replace("*", "").replace("`", "")
-
-# ---------- Daily Problem Scheduling ----------
-daily_problem_message = None
-correct_answer_letter = None
-correct_answer_option = None
-problem = None
-
+# ---------- Daily Problem Scheduler ----------
 @tasks.loop(minutes=1)
 async def daily_problem_scheduler():
     global last_sent_date, daily_problem_message, correct_answer_letter, correct_answer_option, problem, sent_message
@@ -156,7 +106,6 @@ async def daily_problem_scheduler():
     now_ist = datetime.now(pytz.utc).astimezone(IST)
     today_date = now_ist.date()
 
-    # Next 8 AM IST
     if now_ist.time() < dt_time(8, 0):
         next_daily = datetime.combine(today_date, dt_time(8, 0, 0))
     else:
@@ -171,7 +120,6 @@ async def daily_problem_scheduler():
             try:
                 problem = await math_problem()
 
-                # Extract and remove the "Correct Answer: X" marker if present
                 match = re.search(r"Correct Answer:\s*([A-D])", problem, re.IGNORECASE)
                 if match:
                     correct_answer_letter = match.group(1).upper()
@@ -183,12 +131,10 @@ async def daily_problem_scheduler():
                 correct_answer_option = LETTER_TO_EMOJI.get(correct_answer_letter)
 
                 daily_problem_message = await channel.send("<@&1378364940322345071> \n\n" + problem)
-                logger.info(f"📤 Daily problem sent (Answer letter: {correct_answer_letter}, emoji: {correct_answer_option})")
+                logger.info(f"📤 Daily problem sent (Answer: {correct_answer_letter}, emoji: {correct_answer_option})")
 
-                # Save to DB
                 database.save_daily_problem(today_date, problem, correct_answer_letter, correct_answer_option, daily_problem_message.id)
 
-                # Add reactions
                 for emoji in ['🇦', '🇧', '🇨', '🇩']:
                     await daily_problem_message.add_reaction(emoji)
 
@@ -204,15 +150,11 @@ async def daily_problem_scheduler():
         if not sent_message:
             hours = int(wait_seconds // 3600)
             minutes = int((wait_seconds % 3600) // 60)
-            print(
-                f"⏳ Sleeping {hours} hrs {minutes} mins until 8 AM for daily math problem..."
-                if minutes != 0 else
-                f"⏳ Sleeping {hours} hrs until 8 AM for daily math problem..."
-            )
+            msg = (f"⏳ Sleeping {hours} hrs {minutes} mins until 8 AM..." if minutes else f"⏳ Sleeping {hours} hrs until 8 AM...")
+            print(msg)
             sent_message = True
 
 async def init_daily_problem():
-    """Load today's problem from DB into globals."""
     global problem, correct_answer_letter, correct_answer_option, daily_problem_message
     now_ist = datetime.now(pytz.utc).astimezone(IST)
     today_data = database.load_today_problem(now_ist.date())
@@ -225,30 +167,21 @@ async def init_daily_problem():
             daily_problem_message = await channel.fetch_message(today_data['message_id'])
             logger.info("✅ Loaded today's problem from DB.")
         except Exception as e:
-            logger.warning(f"⚠ Could not fetch message from Discord: {e}")
+            logger.warning(f"⚠ Could not fetch message: {e}")
             daily_problem_message = None
     else:
         logger.info("ℹ️ No problem stored for today.")
 
 async def schedule_midnight_vote_summary():
-    """Run vote summary at midnight IST daily."""
     await bot.wait_until_ready()
     await init_daily_problem()
-
-    channel = bot.get_channel(1402996264278298695)  # Problem channel ID
+    channel = bot.get_channel(1402996264278298695)
 
     while not bot.is_closed():
-        now_utc = datetime.utcnow().replace(tzinfo=pytz.utc)
-        now_ist = now_utc.astimezone(IST)
-
+        now_ist = datetime.now(pytz.utc).astimezone(IST)
         next_midnight_ist = IST.localize(datetime.combine(now_ist.date() + timedelta(days=1), dt_time(0, 0, 0)))
         wait_seconds = (next_midnight_ist - now_ist).total_seconds()
-        hours = int(wait_seconds // 3600)
-        minutes = int((wait_seconds % 3600) // 60)
-        logger.info(
-            f"⏳ Sleeping {hours} hrs {minutes} minutes until midnight IST for vote summary..."
-            if minutes != 0 else f"⏳ Sleeping {hours} hrs until midnight IST for vote summary..."
-        )
+        logger.info(f"⏳ Sleeping until midnight IST for vote summary...")
         await asyncio.sleep(wait_seconds)
 
         global daily_problem_message, correct_answer_option, problem
@@ -258,50 +191,41 @@ async def schedule_midnight_vote_summary():
                 if results:
                     total_votes = sum(results.values())
                     correct_votes = results.get(correct_answer_option, 0)
-
                     summary = (
-                        f"📊 **Daily problem voting summary at midnight IST:**\n"
+                        f"📊 **Daily problem voting summary:**\n"
                         f"Total votes: {total_votes}\n"
                         f"Correct votes ({correct_answer_option}): {correct_votes}\n"
-                        f"Votes breakdown:\n"
+                        f"Votes breakdown:\n" +
+                        "".join(f"{emoji}: {count}\n" for emoji, count in results.items())
                     )
-                    for emoji, count in results.items():
-                        summary += f"{emoji}: {count}\n"
 
-                    prompt_for_result = f"""Mathy, I am sharing you a result of this math problem.
-{problem}
-
-Here is the result.
+                    prompt_for_result = f"""{problem}
 
 {summary}
 
-Roast them if bad or do anything based on the situation, also don't leave them hanging and confused, actually solve that problem.
-Also keep it under 1000 characters and actually see the votes and judge using the hardness of the question, basically tell YOUR verdict on the votes."""
+Roast them if bad or solve the problem. Keep under 1000 chars."""
                     response = await get_mathy_response(prompt_for_result)
-                    logger.info(f"Vote summary message to send:\n{summary}")
-
                     await channel.send("<@&1378364940322345071> \n \n" + response)
                     logger.info("✅ Sent midnight vote summary.")
                 else:
                     await channel.send("No votes data available for midnight summary.")
             except Exception as e:
-                logger.error(f"❌ Error sending midnight vote summary: {e}")
+                logger.error(f"❌ Error sending midnight summary: {e}")
                 set_error_flag(True)
         else:
-            logger.info("ℹ️ No active daily problem or channel for midnight vote summary.")
+            logger.info("ℹ️ No active daily problem for midnight summary.")
 
-# ---------- Bot Events & Commands ----------
+# ---------- Events ----------
 @bot.event
 async def on_ready():
     logger.info(f"✅ Logged in as {bot.user}")
     reset_status()
 
-    # Ensure DB tables exist
     try:
         database.init_db()
         logger.info("🗄️ Database initialized.")
     except Exception as e:
-        logger.error(f"❌ Database initialization failed: {e}")
+        logger.error(f"❌ DB init failed: {e}")
         set_error_flag(True)
 
     activity_map = {
@@ -309,7 +233,6 @@ async def on_ready():
         "Listening to": discord.ActivityType.listening,
         "Watching": discord.ActivityType.watching
     }
-
     try:
         quote, activity_type_str = await math_quote()
         activity_type = activity_map.get(activity_type_str, discord.ActivityType.playing)
@@ -317,10 +240,9 @@ async def on_ready():
         await bot.change_presence(activity=discord.Activity(type=activity_type, name=quote))
         logger.info(f"🧠 Status set to: {quote}")
     except Exception as e:
-        logger.error(f"❌ Failed to set quote status: {e}")
+        logger.error(f"❌ Failed to set status: {e}")
         set_error_flag(True)
 
-    # Background tasks
     bot.loop.create_task(schedule_midnight_vote_summary())
     daily_problem_scheduler.start()
     asyncio.create_task(restart_at_safe_time())
@@ -328,8 +250,7 @@ async def on_ready():
 @bot.event
 async def on_member_join(member):
     role_name = "MathMind"
-    guild = member.guild
-    role = discord.utils.get(guild.roles, name=role_name)
+    role = discord.utils.get(member.guild.roles, name=role_name)
     if role:
         await member.add_roles(role)
         print(f"Assigned role '{role_name}' to {member.name}")
@@ -362,12 +283,9 @@ async def votes(ctx):
 
     total_votes = sum(counts.values())
     correct_votes = counts.get(correct_answer_option, 0) if correct_answer_option else 0
-
-    response = "**Current votes:**\n"
-    for emoji, count in counts.items():
-        response += f"{emoji} : {count}\n"
+    response = "**Current votes:**\n" + "".join(f"{emoji} : {count}\n" for emoji, count in counts.items())
     if correct_answer_option:
-        response += f"\n✅ Correct option {correct_answer_option} has {correct_votes} vote(s) out of {total_votes} total."
+        response += f"\n✅ Correct option {correct_answer_option} has {correct_votes}/{total_votes} votes."
     await ctx.send(response)
 
 @bot.event
@@ -376,46 +294,29 @@ async def on_message(message: discord.Message):
         return
 
     if bot.user.mentioned_in(message):
-        # Trigger Arduino to flash both LEDs by writing status file
         with open(STATUS_FILE, "w", encoding="utf-8") as f:
             json.dump({"flash_both": True, "timestamp": asyncio.get_event_loop().time()}, f)
 
         prompt = message.content.replace(f"<@{bot.user.id}>", "").strip()
         try:
             await message.channel.typing()
-
-            response = await get_mathy_response(
-                user_prompt=prompt,
-                user_ident=str(message.author),
-                user_id=str(message.author.id)
-            )
-
-            # normalize accidental code-fenced mentions back to <@id>
+            response = await get_mathy_response(prompt, str(message.author), str(message.author.id))
             response = re.sub(r"`<@(\d{18})>`", r"<@\1>", response)
 
-            # Clean message (replace mentions with usernames for logging) and sanitize special chars
             cleaned_message = await replace_mentions_with_usernames(message)
             cleaned_message = cleaned_message.replace("<@1376515962915913778>", "@Mathy").replace("*", "").replace("`", "")
 
-            # DB log
-            database.log_mathy_interaction(
-                message.author.id,
-                str(message.author),
-                cleaned_message,
-                response
-            )
-
+            database.log_mathy_interaction(message.author.id, str(message.author), cleaned_message, response)
         except Exception as e:
             response = f"❌ Error generating response: {str(e)}"
             logger.error(f"Error in get_mathy_response: {e}")
             set_error_flag(True)
 
-        # Send in chunks (<=2000 chars)
         for chunk in chunk_message(response):
             await message.channel.send(chunk)
 
         log_interaction(message.author, prompt, response)
-        logger.info(f"Sent a response to {message.author}'s prompt: {prompt}")
+        logger.info(f"Responded to {message.author}: {prompt}")
 
     await bot.process_commands(message)
 
