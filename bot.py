@@ -60,6 +60,19 @@ CREATE TABLE IF NOT EXISTS mathy_logs (
     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 """)
+
+cur.execute("""
+CREATE TABLE IF NOT EXISTS daily_problems (
+    id SERIAL PRIMARY KEY,
+    date DATE UNIQUE NOT NULL,
+    problem_text TEXT NOT NULL,
+    correct_answer_letter CHAR(1),
+    correct_answer_option TEXT,
+    message_id BIGINT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+""")
+
 conn.commit()
 
 intents = discord.Intents.default()
@@ -67,6 +80,25 @@ intents.message_content = True
 intents.members=True
 
 bot = commands.Bot(command_prefix=commands.when_mentioned, intents=intents)
+
+def save_daily_problem(date, problem_text, letter, option, message_id):
+    cur.execute("""
+        INSERT INTO daily_problems (date, problem_text, correct_answer_letter, correct_answer_option, message_id)
+        VALUES (%s, %s, %s, %s, %s)
+        ON CONFLICT (date) DO UPDATE
+        SET problem_text = EXCLUDED.problem_text,
+            correct_answer_letter = EXCLUDED.correct_answer_letter,
+            correct_answer_option = EXCLUDED.correct_answer_option,
+            message_id = EXCLUDED.message_id
+    """, (date, problem_text, letter, option, message_id))
+    conn.commit()
+
+def get_latest_daily_problem():
+    cur.execute(
+        "SELECT problem_text FROM daily_problems ORDER BY created_at DESC LIMIT 1"
+    )
+    row = cur.fetchone()
+    return row[0] if row else None
 
 # === Helper to set error flag ===
 def set_error_flag(value: bool = True):
@@ -185,7 +217,7 @@ async def daily_problem_scheduler():
 
                 daily_problem_message = await channel.send("<@&1378364940322345071> \n\n" + problem)
                 logger.info(f"📤 Daily problem sent to #{channel.name} (Answer letter: {correct_answer_letter}, emoji: {correct_answer_option})")
-
+                save_daily_problem(today_date, problem, correct_answer_letter, correct_answer_option, daily_problem_message.id)
                 for emoji in LETTER_TO_EMOJI.values():
                     await daily_problem_message.add_reaction(emoji)
 
@@ -214,9 +246,38 @@ problem = None
 
 IST = pytz.timezone('Asia/Kolkata')
 
+def load_today_problem(date):
+    """Load today's problem from DB."""
+    cur.execute("SELECT * FROM daily_problems WHERE date = %s", (date,))
+    return cur.fetchone()
+
+async def init_daily_problem():
+    """Load today's problem from DB into globals."""
+    global problem, correct_answer_letter, correct_answer_option, daily_problem_message
+    now_ist = datetime.now(pytz.utc).astimezone(IST)
+    today_data = load_today_problem(now_ist.date())
+
+    if today_data:
+        problem = today_data['problem_text']
+        correct_answer_letter = today_data['correct_answer_letter']
+        correct_answer_option = today_data['correct_answer_option']
+        try:
+            channel = bot.get_channel(1402996264278298695)
+            daily_problem_message = await channel.fetch_message(today_data['message_id'])
+            logger.info("✅ Loaded today's problem from DB.")
+        except Exception as e:
+            logger.warning(f"⚠ Could not fetch message from Discord: {e}")
+            daily_problem_message = None
+    else:
+        logger.info("ℹ️ No problem stored for today.")
+
 async def schedule_midnight_vote_summary():
     """Background task to run vote summary at midnight IST daily."""
     await bot.wait_until_ready()
+
+    # Load today's problem from DB on startup
+    await init_daily_problem()
+
     channel = bot.get_channel(1402996264278298695)  # Problem channel ID
 
     while not bot.is_closed():
@@ -230,7 +291,10 @@ async def schedule_midnight_vote_summary():
         wait_seconds = (next_midnight_ist - now_ist).total_seconds()
         hours = int(wait_seconds // 3600)
         minutes = int((wait_seconds % 3600) // 60)
-        logger.info(f"⏳ Sleeping {hours} hrs {minutes} minutes until midnight IST for vote summary..." if minutes!=0 else f"⏳ Sleeping {hours} hrs until midnight IST for vote summary...")
+        logger.info(
+            f"⏳ Sleeping {hours} hrs {minutes} minutes until midnight IST for vote summary..."
+            if minutes != 0 else f"⏳ Sleeping {hours} hrs until midnight IST for vote summary..."
+        )
         await asyncio.sleep(wait_seconds)
 
         # Run the vote summary at midnight
@@ -259,7 +323,7 @@ Here is the result.
 {summary}
 
 Roast them if bad or do anything based on the situation, also don't leave them hanging and confused, actually solve that problem.
-Also keep it under 2k characters and actually see the votes and judge using the hardness of the question, basically tell YOUR verdict on the votes."""
+Also keep it under 1000 characters and actually see the votes and judge using the hardness of the question, basically tell YOUR verdict on the votes."""
                     response = await get_mathy_response(prompt_for_result)
                     logger.info(f"Vote summary message to send:\n{summary}")
 
