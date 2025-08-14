@@ -304,7 +304,7 @@ async def on_message(message: discord.Message):
             response = re.sub(r"`<@(\d{18})>`", r"<@\1>", response)
 
             cleaned_message = await replace_mentions_with_usernames(message)
-            cleaned_message = cleaned_message.replace("<@1376515962915913778>", "@Mathy").replace("*", "").replace("`", "")
+            cleaned_message = cleaned_message.replace("@MathMinds Bot", "@Mathy").replace("*", "").replace("`", "")
 
             database.log_mathy_interaction(message.author.id, str(message.author), cleaned_message, response)
         except Exception as e:
