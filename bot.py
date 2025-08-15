@@ -129,7 +129,7 @@ async def daily_problem_scheduler():
 
                 LETTER_TO_EMOJI = {'A': '🇦', 'B': '🇧', 'C': '🇨', 'D': '🇩'}
                 correct_answer_option = LETTER_TO_EMOJI.get(correct_answer_letter)
-
+                daily_problem_message=daily_problem_message.replace("\u2714", "")
                 daily_problem_message = await channel.send("<@&1378364940322345071> \n\n" + problem)
                 logger.info(f"📤 Daily problem sent (Answer: {correct_answer_letter}, emoji: {correct_answer_option})")
 
