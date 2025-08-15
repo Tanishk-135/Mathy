@@ -203,7 +203,7 @@ async def schedule_midnight_vote_summary():
 
 {summary}
 
-Roast them if bad or solve the problem. Keep under 1000 chars."""
+Roast them if bad or solve the problem. Keep under 1000 characters."""
                     response = await get_mathy_response(prompt_for_result)
                     await channel.send("<@&1378364940322345071> \n \n" + response)
                     logger.info("✅ Sent midnight vote summary.")
