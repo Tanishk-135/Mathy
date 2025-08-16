@@ -4,6 +4,7 @@ import google.generativeai as genai
 from dotenv import load_dotenv
 from ai import get_mathy_response
 import random
+import asyncio
 
 load_dotenv()
 

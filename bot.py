@@ -114,7 +114,7 @@ async def daily_problem_scheduler():
 
     wait_seconds = (next_daily - now_ist).total_seconds()
 
-    if dt_time(8, 0) <= now_ist.time() <= dt_time(8, 30) and last_sent_date != today_date:
+    if dt_time(21, 0) <= now_ist.time() <= dt_time(21, 30) and last_sent_date != today_date:
         channel = bot.get_channel(1402996264278298695)  # <-- your channel ID
         if channel:
             try:
