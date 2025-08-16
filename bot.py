@@ -257,6 +257,32 @@ async def on_member_join(member):
     else:
         print(f"Role '{role_name}' not found")
 
+@bot.event
+async def on_raw_reaction_add(payload):
+    global daily_problem_message
+
+    # Ignore bot's own reactions
+    if payload.user_id == bot.user.id:
+        return
+
+    # Check if it's the daily problem message
+    if daily_problem_message and payload.message_id == daily_problem_message.id:
+        guild = bot.get_guild(payload.guild_id)
+        channel = guild.get_channel(payload.channel_id)
+        message = await channel.fetch_message(payload.message_id)
+
+        # Get the member
+        member = guild.get_member(payload.user_id)
+
+        # Iterate through all reactions
+        for reaction in message.reactions:
+            # If this reaction is not the one just added
+            if reaction.emoji != payload.emoji.name:
+                # Remove it for this user
+                users = await reaction.users().flatten()
+                if member in users:
+                    await reaction.remove(member)
+
 @bot.command()
 async def restart(ctx):
     if ctx.author.id == OWNER_ID and OWNER_ID != 0:
