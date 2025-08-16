@@ -255,7 +255,7 @@ async def on_ready():
     bot.loop.create_task(schedule_midnight_vote_summary())
     daily_problem_scheduler.start()
     asyncio.create_task(restart_at_safe_time())
-    bot.loop.create_task(reaction_worker())
+#   bot.loop.create_task(reaction_worker())
     print("Reaction worker started")
 
 @bot.event
