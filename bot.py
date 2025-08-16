@@ -255,6 +255,8 @@ async def on_ready():
     bot.loop.create_task(schedule_midnight_vote_summary())
     daily_problem_scheduler.start()
     asyncio.create_task(restart_at_safe_time())
+    bot.loop.create_task(reaction_worker())
+    print("Reaction worker started")
 
 @bot.event
 async def on_member_join(member):
@@ -266,8 +268,21 @@ async def on_member_join(member):
     else:
         print(f"Role '{role_name}' not found")
 
-# Locks to prevent race conditions
-user_locks = {}
+reaction_queue = asyncio.Queue()
+
+# Worker task: processes reaction removals one at a time
+async def reaction_worker():
+    while True:
+        reaction, user = await reaction_queue.get()
+        try:
+            await asyncio.sleep(1)  # small delay to let Discord register all reactions
+            await reaction.remove(user)
+        except discord.Forbidden:
+            print("Missing permission to remove reaction")
+        except Exception as e:
+            print(f"Error removing reaction: {e}")
+        finally:
+            reaction_queue.task_done()
 
 @bot.event
 async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
@@ -279,34 +294,27 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
         return
 
     valid_choices = {"🇦", "🇧", "🇨", "🇩"}
-    emoji_str = str(payload.emoji)
-    if emoji_str not in valid_choices:
+    if str(payload.emoji) not in valid_choices:
         return
 
-    # --- lock per user to avoid race conditions ---
-    if payload.user_id not in user_locks:
-        user_locks[payload.user_id] = asyncio.Lock()
+    channel = bot.get_channel(payload.channel_id)
+    if not channel:
+        return
 
-    async with user_locks[payload.user_id]:
-        channel = bot.get_channel(payload.channel_id)
-        if not channel:
+    try:
+        message = await channel.fetch_message(payload.message_id)
+        user = message.guild.get_member(payload.user_id)
+        if not user:
             return
 
-        try:
-            message = await channel.fetch_message(payload.message_id)
-            user = message.guild.get_member(payload.user_id)
-            if not user:
-                return
+        # enqueue removal of other reactions instead of doing it instantly
+        for reaction in message.reactions:
+            emoji_str = str(reaction.emoji)
+            if emoji_str in valid_choices and emoji_str != str(payload.emoji):
+                await reaction_queue.put((reaction, user))
 
-            # remove this user from all *other* A–D reactions
-            for reaction in message.reactions:
-                if str(reaction.emoji) in valid_choices and str(reaction.emoji) != emoji_str:
-                    await reaction.remove(user)
-
-        except discord.Forbidden:
-            logger.warning("Missing permissions to remove reactions.")
-        except Exception as e:
-            logger.error(f"on_raw_reaction_add error: {e}")
+    except Exception as e:
+        print(f"on_raw_reaction_add error: {e}")
 
 @bot.command()
 async def restart(ctx):
