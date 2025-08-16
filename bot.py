@@ -275,20 +275,15 @@ async def reaction_worker():
     while True:
         reaction, user = await reaction_queue.get()
         try:
-            await asyncio.sleep(0.8)  # small delay to let Discord sync reactions
-
-            # ✅ Double-check before removing
-            users = [u async for u in reaction.users() if not u.bot]
-            if user not in users:
-                # user already removed / didn't react with this emoji
-                continue  
-
+            await asyncio.sleep(0.6)  # small delay to let Discord register properly
             await reaction.remove(user)
-
         except discord.Forbidden:
-            print("Missing permission to remove reaction")
+            print("❌ Missing permission to remove reaction")
+        except discord.NotFound:
+            # reaction already gone
+            pass
         except Exception as e:
-            print(f"Error removing reaction: {e}")
+            print(f"⚠️ Error removing reaction: {e}")
         finally:
             reaction_queue.task_done()
 
@@ -315,19 +310,11 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
         if not user:
             return
 
-        # ✅ Count how many valid reactions the user currently has
-        user_reactions = [
-            str(r.emoji) for r in message.reactions
-            if str(r.emoji) in valid_choices
-            and user in await r.users().flatten()
-        ]
-
-        # If they already have 2+ reactions, enqueue removals (except the new one)
-        if len(user_reactions) > 1:
-            for reaction in message.reactions:
-                emoji_str = str(reaction.emoji)
-                if emoji_str in valid_choices and emoji_str != str(payload.emoji):
-                    await reaction_queue.put((reaction, user))
+        # ✅ Enqueue removal of ALL other reactions (processed in worker)
+        for reaction in message.reactions:
+            emoji_str = str(reaction.emoji)
+            if emoji_str in valid_choices and emoji_str != str(payload.emoji):
+                await reaction_queue.put((reaction, user))
 
     except Exception as e:
         print(f"on_raw_reaction_add error: {e}")
