@@ -106,16 +106,18 @@ async def daily_problem_scheduler():
     now_ist = datetime.now(pytz.utc).astimezone(IST)
     today_date = now_ist.date()
 
-    if now_ist.time() < dt_time(8, 0):
-        next_daily = datetime.combine(today_date, dt_time(8, 0, 0))
+    # Next 00:00 IST
+    if now_ist.time() < dt_time(0, 0):
+        next_window = datetime.combine(today_date, dt_time(0, 0, 0))
     else:
-        next_daily = datetime.combine(today_date + timedelta(days=1), dt_time(8, 0, 0))
-    next_daily = IST.localize(next_daily)
+        next_window = datetime.combine(today_date + timedelta(days=1), dt_time(0, 0, 0))
+    next_window = IST.localize(next_window)
 
-    wait_seconds = (next_daily - now_ist).total_seconds()
+    wait_seconds = (next_window - now_ist).total_seconds()
 
+    # Send between 00:00–00:30 IST
     if dt_time(0, 0) <= now_ist.time() <= dt_time(0, 30) and last_sent_date != today_date:
-        channel = bot.get_channel(1402996264278298695)  # <-- your channel ID
+        channel = bot.get_channel(1402996264278298695)
         if channel:
             try:
                 problem = await math_problem()
@@ -129,8 +131,11 @@ async def daily_problem_scheduler():
 
                 LETTER_TO_EMOJI = {'A': '🇦', 'B': '🇧', 'C': '🇨', 'D': '🇩'}
                 correct_answer_option = LETTER_TO_EMOJI.get(correct_answer_letter)
+
+                # scrub stray checkmarks if model adds them
                 problem = problem.replace("\u2714", "")
-                daily_problem_message = await channel.send("<@&1378364940322345071> \n\n" + problem)
+
+                daily_problem_message = await channel.send("<@&1378364940322345071>\n\n" + problem)
                 logger.info(f"📤 Daily problem sent (Answer: {correct_answer_letter}, emoji: {correct_answer_option})")
 
                 database.save_daily_problem(today_date, problem, correct_answer_letter, correct_answer_option, daily_problem_message.id)
@@ -150,7 +155,8 @@ async def daily_problem_scheduler():
         if not sent_message:
             hours = int(wait_seconds // 3600)
             minutes = int((wait_seconds % 3600) // 60)
-            msg = (f"⏳ Sleeping {hours} hrs {minutes} mins until 8 AM..." if minutes else f"⏳ Sleeping {hours} hrs until 8 AM...")
+            msg = (f"⏳ Sleeping {hours} hrs {minutes} mins until 12:00 AM IST..."
+                   if minutes else f"⏳ Sleeping {hours} hrs until 12:00 AM IST...")
             print(msg)
             sent_message = True
 
@@ -179,9 +185,12 @@ async def schedule_midnight_vote_summary():
 
     while not bot.is_closed():
         now_ist = datetime.now(pytz.utc).astimezone(IST)
-        next_midnight_ist = IST.localize(datetime.combine(now_ist.date(), dt_time(23, 0, 0)))
-        wait_seconds = (next_midnight_ist - now_ist).total_seconds()
-        logger.info(f"⏳ Sleeping until midnight IST for vote summary...")
+        target = IST.localize(datetime.combine(now_ist.date(), dt_time(23, 0, 0)))
+        if now_ist >= target:
+            target += timedelta(days=1)
+        wait_seconds = (target - now_ist).total_seconds()
+
+        logger.info("⏳ Sleeping until 11:00 PM IST for vote summary...")
         await asyncio.sleep(wait_seconds)
 
         global daily_problem_message, correct_answer_option, problem
@@ -258,23 +267,42 @@ async def on_member_join(member):
         print(f"Role '{role_name}' not found")
 
 @bot.event
-async def on_reaction_add(reaction, user):
-    if user.bot:
+async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
+    # ignore bot
+    if payload.user_id == bot.user.id:
         return
 
-    # Define the valid choices
-    valid_choices = ["🇦", "🇧", "🇨", "🇩"]
+    # only enforce on the active daily problem message
+    global daily_problem_message
+    if not daily_problem_message or payload.message_id != daily_problem_message.id:
+        return
 
-    # If the reaction is one of the valid choices
-    if reaction.emoji in valid_choices:
-        for r in reaction.message.reactions:
-            if (
-                r.emoji in valid_choices  # only consider Mathy's options
-                and r.emoji != reaction.emoji  # skip the one user just clicked
-            ):
-                users = [u async for u in r.users()]
-                if user in users:
-                    await r.remove(user)
+    valid_choices = {"🇦", "🇧", "🇨", "🇩"}
+    if str(payload.emoji) not in valid_choices:
+        return  # let users add any other emoji freely
+
+    channel = bot.get_channel(payload.channel_id)
+    if not channel:
+        return
+
+    try:
+        message = await channel.fetch_message(payload.message_id)
+        user = message.guild.get_member(payload.user_id)
+        if not user:
+            return
+
+        # remove this user from all *other* A–D reactions on this message
+        for reaction in message.reactions:
+            emoji_str = str(reaction.emoji)
+            if emoji_str in valid_choices and emoji_str != str(payload.emoji):
+                # Only try to remove if that user actually reacted on that emoji.
+                # Avoids fetching all users:
+                # Discord will no-op if the user didn't react.
+                await reaction.remove(user)
+    except discord.Forbidden:
+        logger.warning("Missing 'Manage Messages' or 'Read Message History' permission to remove reactions.")
+    except Exception as e:
+        logger.error(f"on_raw_reaction_add error: {e}")
 
 @bot.command()
 async def restart(ctx):
