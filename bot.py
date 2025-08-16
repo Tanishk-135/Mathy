@@ -266,7 +266,8 @@ async def on_member_join(member):
     else:
         print(f"Role '{role_name}' not found")
 
-reaction_locks = {}
+# Locks to prevent race conditions
+user_locks = {}
 
 @bot.event
 async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
@@ -278,32 +279,32 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
         return
 
     valid_choices = {"🇦", "🇧", "🇨", "🇩"}
-    if str(payload.emoji) not in valid_choices:
+    emoji_str = str(payload.emoji)
+    if emoji_str not in valid_choices:
         return
 
-    channel = bot.get_channel(payload.channel_id)
-    if not channel:
-        return
+    # --- lock per user to avoid race conditions ---
+    if payload.user_id not in user_locks:
+        user_locks[payload.user_id] = asyncio.Lock()
 
-    # per-user lock
-    if payload.user_id not in reaction_locks:
-        reaction_locks[payload.user_id] = asyncio.Lock()
+    async with user_locks[payload.user_id]:
+        channel = bot.get_channel(payload.channel_id)
+        if not channel:
+            return
 
-    async with reaction_locks[payload.user_id]:
         try:
             message = await channel.fetch_message(payload.message_id)
             user = message.guild.get_member(payload.user_id)
             if not user:
                 return
 
-            # remove this user from other reactions
+            # remove this user from all *other* A–D reactions
             for reaction in message.reactions:
-                emoji_str = str(reaction.emoji)
-                if emoji_str in valid_choices and emoji_str != str(payload.emoji):
+                if str(reaction.emoji) in valid_choices and str(reaction.emoji) != emoji_str:
                     await reaction.remove(user)
 
         except discord.Forbidden:
-            logger.warning("Missing 'Manage Messages' or 'Read Message History' permission to remove reactions.")
+            logger.warning("Missing permissions to remove reactions.")
         except Exception as e:
             logger.error(f"on_raw_reaction_add error: {e}")
 
