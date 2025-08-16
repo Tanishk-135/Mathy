@@ -266,43 +266,46 @@ async def on_member_join(member):
     else:
         print(f"Role '{role_name}' not found")
 
+reaction_locks = {}
+
 @bot.event
 async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
-    # ignore bot
     if payload.user_id == bot.user.id:
         return
 
-    # only enforce on the active daily problem message
     global daily_problem_message
     if not daily_problem_message or payload.message_id != daily_problem_message.id:
         return
 
     valid_choices = {"🇦", "🇧", "🇨", "🇩"}
     if str(payload.emoji) not in valid_choices:
-        return  # let users add any other emoji freely
+        return
 
     channel = bot.get_channel(payload.channel_id)
     if not channel:
         return
 
-    try:
-        message = await channel.fetch_message(payload.message_id)
-        user = message.guild.get_member(payload.user_id)
-        if not user:
-            return
+    # per-user lock
+    if payload.user_id not in reaction_locks:
+        reaction_locks[payload.user_id] = asyncio.Lock()
 
-        # remove this user from all *other* A–D reactions on this message
-        for reaction in message.reactions:
-            emoji_str = str(reaction.emoji)
-            if emoji_str in valid_choices and emoji_str != str(payload.emoji):
-                # Only try to remove if that user actually reacted on that emoji.
-                # Avoids fetching all users:
-                # Discord will no-op if the user didn't react.
-                await reaction.remove(user)
-    except discord.Forbidden:
-        logger.warning("Missing 'Manage Messages' or 'Read Message History' permission to remove reactions.")
-    except Exception as e:
-        logger.error(f"on_raw_reaction_add error: {e}")
+    async with reaction_locks[payload.user_id]:
+        try:
+            message = await channel.fetch_message(payload.message_id)
+            user = message.guild.get_member(payload.user_id)
+            if not user:
+                return
+
+            # remove this user from other reactions
+            for reaction in message.reactions:
+                emoji_str = str(reaction.emoji)
+                if emoji_str in valid_choices and emoji_str != str(payload.emoji):
+                    await reaction.remove(user)
+
+        except discord.Forbidden:
+            logger.warning("Missing 'Manage Messages' or 'Read Message History' permission to remove reactions.")
+        except Exception as e:
+            logger.error(f"on_raw_reaction_add error: {e}")
 
 @bot.command()
 async def restart(ctx):
