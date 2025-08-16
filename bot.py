@@ -114,7 +114,7 @@ async def daily_problem_scheduler():
 
     wait_seconds = (next_daily - now_ist).total_seconds()
 
-    if dt_time(21, 0) <= now_ist.time() <= dt_time(21, 30) and last_sent_date != today_date:
+    if dt_time(0, 0) <= now_ist.time() <= dt_time(0, 30) and last_sent_date != today_date:
         channel = bot.get_channel(1402996264278298695)  # <-- your channel ID
         if channel:
             try:
@@ -179,7 +179,7 @@ async def schedule_midnight_vote_summary():
 
     while not bot.is_closed():
         now_ist = datetime.now(pytz.utc).astimezone(IST)
-        next_midnight_ist = IST.localize(datetime.combine(now_ist.date() + timedelta(days=1), dt_time(0, 0, 0)))
+        next_midnight_ist = IST.localize(datetime.combine(now_ist.date(), dt_time(23, 0, 0)))
         wait_seconds = (next_midnight_ist - now_ist).total_seconds()
         logger.info(f"⏳ Sleeping until midnight IST for vote summary...")
         await asyncio.sleep(wait_seconds)
