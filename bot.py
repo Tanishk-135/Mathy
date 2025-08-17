@@ -47,6 +47,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger()
 
+logging.getLogger("discord").setLevel(logging.WARNING)
+logging.getLogger("discord.gateway").setLevel(logging.WARNING)
+logging.getLogger("discord.client").setLevel(logging.WARNING)
+
 # Ensure stdout/stderr can print any unicode safely
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
