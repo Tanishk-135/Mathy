@@ -52,15 +52,63 @@ def log_interaction(user, user_msg, bot_response):
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry) + "\n")
 
+import re
+
 def chunk_message(message, limit=2000):
-    """Split long messages into chunks under the Discord character limit."""
+    """
+    Split long messages into chunks under the Discord character limit,
+    while preserving formatting.
+
+    Rules:
+    1. '*' count must be even (avoid breaking italics/bold).
+       - also must not end right after a lone '*'
+    2. '`' count must be even (avoid breaking inline/code blocks).
+       - also check for triple backticks ``` pairs
+    3. Must not end with '\n'
+    """
     chunks = []
     while len(message) > limit:
         split_point = message.rfind("\n", 0, limit)
         if split_point == -1:
             split_point = limit
+
+        # --- Enforce rules ---
+        while split_point > 0:
+            candidate = message[:split_point]
+
+            # Rule 1: '*' count must be even
+            if candidate.count("*") % 2 != 0:
+                split_point = message.rfind("\n", 0, split_point - 1)
+                continue
+
+            # Rule 1b: don’t end after a lone '*'
+            if re.search(r"(?<!\*)\*$", candidate):  
+                split_point = message.rfind("\n", 0, split_point - 1)
+                continue
+
+            # Rule 2a: '`' count must be even
+            if candidate.count("`") % 2 != 0:
+                split_point = message.rfind("\n", 0, split_point - 1)
+                continue
+
+            # Rule 2b: triple backticks must also be even
+            if candidate.count("```") % 2 != 0:
+                split_point = message.rfind("\n", 0, split_point - 1)
+                continue
+
+            # Rule 3: must not end with newline
+            if candidate.endswith("\n"):
+                split_point = message.rfind("\n", 0, split_point - 1)
+                continue
+
+            break  # ✅ all rules satisfied
+
+        if split_point <= 0:  # failsafe if no valid split found
+            split_point = limit
+
         chunks.append(message[:split_point])
         message = message[split_point:].lstrip()
+
     chunks.append(message)
     return chunks
 
